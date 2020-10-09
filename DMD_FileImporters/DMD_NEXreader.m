@@ -1,4 +1,17 @@
-function [nexFile, status] = NSB_NEXreader(fileName,readType)
+function [nexFile, status] = DMD_NEXreader(fileName,readType,opts)
+% [nexFile, status] = DMD_NEXreader(fileName,readType)
+%
+% This file was originally written by Nex Technologies and likely copyrighted.
+% See http://www.neuroexplorer.com/code.html but no licence was Identified
+%
+% Modified by David M. Devilbiss (26Jan2009) for Full Read of Data
+% release version 1.0 10Oct2010
+% added ability to import data type subset
+% 2013Jul20 Ver 1.1 Added .channel.ChNumber
+% 2020Oct10 Ver 1.2 Added progress bar and read of .nex5
+% 2020Oct10 V1.3 Added Prethreshold data for waveforms
+%
+% -----------------------------Begin Neuroexplorer Comments
 % [nexfile] = fullreadNexFile(fileName) -- read .nex file and return file data
 % in nexfile structure
 %
@@ -61,37 +74,55 @@ function [nexFile, status] = NSB_NEXreader(fileName,readType)
 %           	marker.value.Name - name of marker value
 %           	marker.value.strings - array of marker value strings
 %
-% This file was originally written by Nex Technologies and likely copyrighted.
-% See http://www.neuroexplorer.com/code.html but no licence was Identified
-% Modified by David M. Devilbiss (26Jan2009) for Full Read of Data
-% release version 1.0 10Oct2010
-% added ability to import data type subset
-% 2013Jul20 Ver 1.1 Added .channel.ChNumber
 
 nexFile = [];
 status = false;
-if (nargin < 1 | length(fileName) == 0)
-    [fname, pathname] = uigetfile('*.nex', 'Select a NeuroExplorer file');
-    fileName = strcat(pathname, fname);
-    readType = 0:6;
-elseif nargin == 1
-    [pathname, fname, fext] = fileparts(fileName);
-    fname = [fname,fext];
-    readType = 0:6;
-else
-    [pathname, fname, fext] = fileparts(fileName);
-    fname = [fname,fext];
+
+switch nargin
+    case 0
+        [fname, pathname] = uigetfile( {'*.nex';'.nex5'}, 'Select a NeuroExplorer file');
+        fileName = strcat(pathname, fname);
+        [~, ~, fext] = fileparts(fileName); %identify Nex Type
+        readType = 0:6;
+        opts.progress = true;
+    case 1
+        if isempty(fileName)
+            [fname, pathname] = uigetfile( {'*.nex';'.nex5'}, 'Select a NeuroExplorer file');
+            fileName = strcat(pathname, fname);
+        end
+        [pathname, fname, fext] = fileparts(fileName);
+        fname = [fname,fext];
+        readType = 0:6;
+        opts.progress = true;
+    case 2
+        [pathname, fname, fext] = fileparts(fileName);
+        fname = [fname,fext];
+        opts.progress = true;
+    case 3
+        [pathname, fname, fext] = fileparts(fileName);
+        fname = [fname,fext];
+        if ~isfield(opts,'progress')
+            opts.progress = true;
+        end
 end
 
-fid = fopen(fileName, 'r');
+if strcmpi(fext, '.nex5')
+    [nexFile, status] = DMD_NEX5reader(fileName,readType,opts);
+    return;
+end
+
+fid = fopen(fileName, 'r', 'l','US-ASCII'); %Alex suggestion to ensure that the files are read correctly
+% on big-endian systems, such as Mac.
 if(fid == -1)
     error 'Unable to open file'
-    return
+    return;
 end
 
-warning off; %may be tex issues with underscores
-hWaitBar = waitbar(0, ['Please Wait, Opening: ',regexprep(fname,'[_^]',' ')]);
-warning on;
+if opts.progress
+    warning off; %may be tex issues with underscores
+    hWaitBar = waitbar(0, ['Please Wait, Opening: ',regexprep(fname,'[_^]',' ')]);
+    warning on;
+end
 
 magic = fread(fid, 1, 'int32');
 if magic ~= 827868494
@@ -140,8 +171,10 @@ for i=1:nexFile.nChannels
     NMarkers = fread(fid, 1, 'int32'); % how many values are associated with each marker
     MarkerLength = fread(fid, 1, 'int32'); % how many characters are in each marker value
     MVOfffset = fread(fid, 1, 'double'); % coeff to shift AD values in Millivolts: mv = raw*ADtoMV+MVOfffset
+    PrethresholdTime = fread(fid, 1, 'double'); % if waveform timestamp in seconds is t,
+    % then the timestamp of the first point of waveform is t - PrethresholdTimeInSeconds
     Units = 'mV';
-    %60 char pad delt with below
+    %60/52 char pad dealt with below
     filePosition = ftell(fid);
     if ismember(type, readType)
         switch type
@@ -158,9 +191,9 @@ for i=1:nexFile.nChannels
                 
                 fseek(fid, offset, 'bof');
                 nexFile.neurons(neuronCount,1).ts = fread(fid, [n 1], 'int32')./nexFile.Hz;
-                fseek(fid, filePosition, 'bof');
                 
                 %added bonus data for ease of re-writing
+                %if Nex ver is <=100 Wire and Unit Number = 0
                 nexFile.neurons(neuronCount,1).type = type;
                 nexFile.neurons(neuronCount,1).varVersion = varVersion;
                 nexFile.neurons(neuronCount,1).FilePosDataOffset = offset;
@@ -177,6 +210,7 @@ for i=1:nexFile.nChannels
                 nexFile.neurons(neuronCount,1).NMarkers = NMarkers;
                 nexFile.neurons(neuronCount,1).MarkerLength = MarkerLength;
                 nexFile.neurons(neuronCount,1).MVOfffset = MVOfffset;
+                nexFile.neurons(neuronCount,1).PrethresholdTime = PrethresholdTime;
                 
             case 1 % event
                 eventCount = eventCount+1;
@@ -191,7 +225,6 @@ for i=1:nexFile.nChannels
                 
                 fseek(fid, offset, 'bof');
                 nexFile.events(eventCount,1).ts = fread(fid, [n 1], 'int32')./nexFile.Hz;
-                fseek(fid, filePosition, 'bof');
                 
                 %added bonus data for ease of re-writing
                 nexFile.events(eventCount,1).type = type;
@@ -210,11 +243,12 @@ for i=1:nexFile.nChannels
                 nexFile.events(eventCount,1).NMarkers = NMarkers;
                 nexFile.events(eventCount,1).MarkerLength = MarkerLength;
                 nexFile.events(eventCount,1).MVOfffset = MVOfffset;
+                nexFile.events(eventCount,1).PrethresholdTime = PrethresholdTime;
                 
             case 2 % interval
                 intervalCount = intervalCount+1;
                 nexFile.intervals(intervalCount,1).Name = name;
-                                % Initially i wanted this to be the nax channel number and
+                % Initially i wanted this to be the nax channel number and
                 % wire nnumber but in earlier versions this seems to be 0;
                 % The other option is to index each type individually but
                 % they wont have a uid. so we are using the raw channel
@@ -225,7 +259,6 @@ for i=1:nexFile.nChannels
                 fseek(fid, offset, 'bof');
                 nexFile.intervals(intervalCount,1).intStarts = fread(fid, [n 1], 'int32')./nexFile.Hz;
                 nexFile.intervals(intervalCount,1).intEnds = fread(fid, [n 1], 'int32')./nexFile.Hz;
-                fseek(fid, filePosition, 'bof');
                 
                 %added bonus data for ease of re-writing
                 nexFile.intervals(intervalCount,1).type = type;
@@ -244,11 +277,12 @@ for i=1:nexFile.nChannels
                 nexFile.intervals(intervalCount,1).NMarkers = NMarkers;
                 nexFile.intervals(intervalCount,1).MarkerLength = MarkerLength;
                 nexFile.intervals(intervalCount,1).MVOfffset = MVOfffset;
+                nexFile.intervals(intervalCount,1).PrethresholdTime = PrethresholdTime;
                 
             case 3 % waveform
                 waveCount = waveCount+1;
                 nexFile.waves(waveCount,1).Name = name;
-                                % Initially i wanted this to be the nax channel number and
+                % Initially i wanted this to be the nax channel number and
                 % wire nnumber but in earlier versions this seems to be 0;
                 % The other option is to index each type individually but
                 % they wont have a uid. so we are using the raw channel
@@ -262,9 +296,9 @@ for i=1:nexFile.nChannels
                 fseek(fid, offset, 'bof');
                 nexFile.waves(waveCount,1).ts = fread(fid, [n 1], 'int32')./nexFile.Hz;
                 nexFile.waves(waveCount,1).waveforms = fread(fid, [NPointsWave n], 'int16').*ADtoMV + MVOfffset;
-                fseek(fid, filePosition, 'bof');
                 
                 %added bonus data for ease of re-writing
+                %if Nex ver is <=100 Wire and Unit Number = 0
                 nexFile.waves(waveCount,1).type = type;
                 nexFile.waves(waveCount,1).varVersion = varVersion;
                 nexFile.waves(waveCount,1).FilePosDataOffset = offset;
@@ -280,12 +314,21 @@ for i=1:nexFile.nChannels
                 nexFile.waves(waveCount,1).NPointsWave = NPointsWave;
                 nexFile.waves(waveCount,1).NMarkers = NMarkers;
                 nexFile.waves(waveCount,1).MarkerLength = MarkerLength;
-                nexFile.waves(waveCount,1).MVOfffset = MVOfffset;
+                if nexFile.Version > 104
+                    nexFile.waves(waveCount,1).MVOfffset = MVOfffset;
+                else
+                    nexFile.waves{waveCount,1}.MVOfffset = 0;
+                end
+                if (varVersion > 101) && (nexFile.Version >= 106)
+                    nexFile.waves(waveCount,1).PrethresholdTime = PrethresholdTime;
+                else
+                    nexFile.waves(waveCount,1).PrethresholdTime = 0;
+                end
                 
             case 4 % population vector
                 popCount = popCount+1;
                 nexFile.popvectors(popCount,1).Name = name;
-                                % Initially i wanted this to be the nax channel number and
+                % Initially i wanted this to be the nax channel number and
                 % wire nnumber but in earlier versions this seems to be 0;
                 % The other option is to index each type individually but
                 % they wont have a uid. so we are using the raw channel
@@ -295,7 +338,6 @@ for i=1:nexFile.nChannels
                 
                 fseek(fid, offset, 'bof');
                 nexFile.popvectors(popCount,1).weights = fread(fid, [n 1], 'double');
-                fseek(fid, filePosition, 'bof');
                 
                 %added bonus data for ease of re-writing
                 nexFile.popvectors(popCount,1).type = type;
@@ -314,11 +356,12 @@ for i=1:nexFile.nChannels
                 nexFile.popvectors(popCount,1).NMarkers = NMarkers;
                 nexFile.popvectors(popCount,1).MarkerLength = MarkerLength;
                 nexFile.popvectors(popCount,1).MVOfffset = MVOfffset;
+                nexFile.popvectors(popCount,1).PrethresholdTime = PrethresholdTime;
                 
             case 5 % continuous variable
                 contCount = contCount+1;
                 nexFile.Channel(contCount,1).Name = name;
-                                % Initially i wanted this to be the nax channel number and
+                % Initially i wanted this to be the nax channel number and
                 % wire nnumber but in earlier versions this seems to be 0;
                 % The other option is to index each type individually but
                 % they wont have a uid. so we are using the raw channel
@@ -334,7 +377,6 @@ for i=1:nexFile.nChannels
                 nexFile.Channel(contCount,1).ts = fread(fid, [n 1], 'int32')./nexFile.Hz;
                 nexFile.Channel(contCount,1).fragmentStarts = fread(fid, [n 1], 'int32') + 1;
                 nexFile.Channel(contCount,1).Data = fread(fid, [NPointsWave 1], 'int16').*ADtoMV + MVOfffset;
-                fseek(fid, filePosition, 'bof');
                 
                 %added bonus data for ease of re-writing
                 nexFile.Channel(contCount,1).type = type;
@@ -352,12 +394,17 @@ for i=1:nexFile.nChannels
                 nexFile.Channel(contCount,1).NPointsWave = NPointsWave;
                 nexFile.Channel(contCount,1).NMarkers = NMarkers;
                 nexFile.Channel(contCount,1).MarkerLength = MarkerLength;
-                nexFile.Channel(contCount,1).MVOfffset = MVOfffset;
+                if nexFile.Version > 104
+                    nexFile.Channel(contCount,1).MVOfffset = MVOfffset;
+                else
+                    nexFile.Channel(contCount,1).MVOfffset = 0;
+                end
+                nexFile.Channel(contCount,1).PrethresholdTime = PrethresholdTime;
                 
             case 6 % marker
                 markerCount = markerCount+1;
                 nexFile.markers(markerCount,1).Name = name;
-                                % Initially i wanted this to be the nax channel number and
+                % Initially i wanted this to be the nax channel number and
                 % wire nnumber but in earlier versions this seems to be 0;
                 % The other option is to index each type individually but
                 % they wont have a uid. so we are using the raw channel
@@ -373,7 +420,6 @@ for i=1:nexFile.nChannels
                         nexFile.markers(markerCount,1).values{i,1}.strings{p, 1} = deblank(char(fread(fid, MarkerLength, 'char')'));
                     end
                 end
-                fseek(fid, filePosition, 'bof');
                 
                 %added bonus data for ease of re-writing
                 nexFile.markers(markerCount,1).type = type;
@@ -392,17 +438,24 @@ for i=1:nexFile.nChannels
                 nexFile.markers(markerCount,1).NMarkers = NMarkers;
                 nexFile.markers(markerCount,1).MarkerLength = MarkerLength;
                 nexFile.markers(markerCount,1).MVOfffset = MVOfffset;
+                nexFile.markers(markerCount,1).PrethresholdTime = PrethresholdTime;
                 
             otherwise
                 disp (['unknown variable type ' num2str(type)]);
         end
-    end
-    dummy = fread(fid, 60, 'char');
-    waitbar(i/nexFile.nChannels);
+    end %read Type
+    % return to file position that was after reading the variable header
+    fseek(fid, filePosition, 'bof');
+    %dummy = fread(fid, 60, 'char'); 60 -> 52 char taken by PrethresholdTime
+    dummy = fread(fid, 52, 'char');
+    if opts.progress; waitbar(i/nexFile.nChannels); end
+    
 end
-waitbar(1);
+if opts.progress; waitbar(1); end
 fclose(fid);
-close(hWaitBar)
+if opts.progress
+    close(hWaitBar);
+end
 
 %update Data
 nexFile.nChannels = length(nexFile.Channel); %cheap but works for now...
