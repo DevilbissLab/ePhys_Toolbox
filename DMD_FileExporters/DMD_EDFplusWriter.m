@@ -122,13 +122,13 @@ else
 end
 %birthdate in dd-MMM-yyyy
 try
-    if isfield(DataStruct,'BirthDate')
-        element = DMD_strcat(element,' ',upper(datestr(DataStruct.BirthDate,'dd-mmm-yyyy')));
-    elseif isfield(DataStruct,'Birthdate')
-        element = DMD_strcat(element,' ',upper(datestr(DataStruct.Birthdate,'dd-mmm-yyyy')));
-    else
-        element = DMD_strcat(element,' X');
-    end
+if isfield(DataStruct,'BirthDate')
+    element = DMD_strcat(element,' ',upper(datestr(DataStruct.BirthDate,'dd-mmm-yyyy')));
+elseif isfield(DataStruct,'Birthdate')
+    element = DMD_strcat(element,' ',upper(datestr(DataStruct.Birthdate,'dd-mmm-yyyy')));
+else
+    element = DMD_strcat(element,' X');
+end
 catch
     element = DMD_strcat(element,' X');
 end
@@ -380,7 +380,6 @@ end
 
 %OK 256 + (nSignals * 256)
 
-
 %% Write EDF Channel Headers
 % open file
 try
@@ -465,27 +464,30 @@ try
             try
                 for curTAL = 1:(RecSize * DataStruct.Channel(TalChanIDX).Hz)
                     if TalChanTS
-                        
+                        tempTALString = '';
                     else
-                    TALString = [TALString, '+',num2str( (curRecord -1) * RecSize + (curTAL -1) * 1/DataStruct.Channel(TalChanIDX).Hz ), char(21), ...
+                    tempTALString = ['+',num2str( (curRecord -1) * RecSize + (curTAL -1) * 1/DataStruct.Channel(TalChanIDX).Hz ), char(21), ...
                         num2str(1/DataStruct.Channel(TalChanIDX).Hz), char(20),...
                         DataStruct.Channel(TalChanIDX).Labels{LabelCounter}, char(20), char(0)];
                     
                     end
+                    if (length(TALString) + length(tempTALString)) <= TalBytes
+                    TALString = [TALString, tempTALString];
                     LabelCounter = LabelCounter +1;
+                    end
                 end
             catch ME
-                errorstr = ['ERROR: NSB_EDFreader >> Missing TAL Data for Record:',num2str(curRecord)];
+                errorstr = ['ERROR: DMD_EDFplusWriter >> Missing TAL Data for Record:',num2str(curRecord)];
                 if ~isempty(options.logfile)
                     status = DMDlogger(options.logfile,errorstr);
                 else
-                    errordlg(errorstr,'NSB_EDFreader');
+                    errordlg(errorstr,'DMD_EDFplusWriter');
                 end
-                errorstr = ['ERROR: NSB_EDFreader >> ',ME.message];
+                errorstr = ['ERROR: DMD_EDFplusWriter >> ',ME.message];
                 if ~isempty(options.logfile)
                     status = DMDlogger(options.logfile,errorstr);
                 else
-                    errordlg(errorstr,'NSB_EDFreader');
+                    errordlg(errorstr,'DMD_EDFplusWriter');
                 end
             end
             
@@ -510,21 +512,36 @@ try
     end
     
     try, close(h), end;
+    fclose(fid);
     
     %% Error Catching
 catch ME
-    errorstr = ['ERROR: NSB_EDFreader >> ',ME.message];
+    errorstr = ['ERROR: DMD_EDFplusWriter >> ',ME.message];
     if ~isempty(options.logfile)
         status = DMDlogger(options.logfile,errorstr);
     else
-        errordlg(errorstr,'NSB_EDFreader');
+        errordlg(errorstr,'DMD_EDFplusWriter');
     end
     fclose(fid);
     return;
     
 end
-fclose(fid);
+if TalChan
+    if LabelCounter < length(DataStruct.Channel(TalChanIDX).Labels)
+        errorstr = ['ERROR: DMD_EDFplusWriter >> TALs were not completely written. Missing ',num2str(length(DataStruct.Channel(TalChanIDX).Labels) - LabelCounter),' Tals'];
+        if ~isempty(options.logfile)
+            status = DMDlogger(options.logfile,errorstr);
+            disp(errorstr);
+        else
+            errordlg(errorstr,'DMD_EDFplusWriter');
+        end
+    end
+end
 status = true;
+
+
+
+
 
 function [RecSize,maxTalSize] = getRecordDuration(DataStruct)
 %duration of a data record, in seconds

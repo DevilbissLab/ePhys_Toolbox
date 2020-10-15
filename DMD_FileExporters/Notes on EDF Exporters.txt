@@ -1,0 +1,7 @@
+I have tried to find and use many different .edf+ writers. Here is what I have found that works best for me
+
+NSB_EDFplusWriter.m
+DMD_EDFplusWriter.m
+Borealis_WriteEDF.m
+
+Other EDF+ writers exist out there but don't seem to work completely or are generally untested/unreliable.
