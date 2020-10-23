@@ -21,7 +21,7 @@ if nargin < 3
     options.progress = true;
 end
 
-%Create folder if non exists
+%Create folder if none exists
 [fnPath,fn,fnExt] = fileparts(filename);
 if exist(fnPath,'dir') ~= 7
     mkdir(fnPath);
@@ -547,7 +547,7 @@ function [RecSize,maxTalSize] = getRecordDuration(DataStruct)
 %duration of a data record, in seconds
 %In EDF(+), data record Durations are specified in an 8-character string, for instance 0.123456 or 1234567
 %In one datarecord, maximum 61440 bytes are available for all signals (including the Annotation signal).
-% encoded as int16 so 61440/2 values avalvble.
+% encoded as int16 so 61440/2 values avalable.
 RecSize = [];maxTalSize=[];
 AvalBytes = 61440;
 AvalSamples = AvalBytes / 2; %aval samples in data record
@@ -559,7 +559,7 @@ AvalSamples = AvalBytes / 2; %aval samples in data record
 [maxTalSize,status] = getTalDuration(DataStruct);
 if ~status
     %no TALs or function failed
-    fpringf(2,'Warning>>DMD_EDFplusWriter:getRecordDuration could not determine TAL size');
+    fprintf(2,'Warning>>DMD_EDFplusWriter:getRecordDuration could not determine TAL size');
     maxTalSize = 0;
 end
 

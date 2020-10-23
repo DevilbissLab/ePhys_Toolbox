@@ -50,6 +50,7 @@ switch nargin
             readType = 0:6;
         end
 end
+[ ~, isPl2 ] = internalPL2ResolveFilenamePlx( fileName );
 
 if opts.progress
     warning off; %may be tex issues with underscores
@@ -223,11 +224,21 @@ for type = readType
                     plxFile.Channel(contCount,1).Units = Units;
                     
                     %read channel data
+                    if ~isPl2
                     [plxFile.Channel(contCount,1).Hz,...
                         plxFile.Channel(contCount,1).nSamples,...
                         plxFile.Channel(contCount,1).timestamps,...
                         plxFile.Channel(contCount,1).fragmentStarts,...
                         plxFile.Channel(contCount,1).Data] = plx_ad_v(fileName, plx.ChanIDs(curChan));
+                    else
+                        pl2ad = PL2Ad(fileName, ContChannels(curChan +1));
+                        plxFile.Channel(contCount,1).Hz = pl2ad.ADFreq;
+                        plxFile.Channel(contCount,1).nSamples = length(pl2ad.Values);
+                        plxFile.Channel(contCount,1).timestamps = pl2ad.FragTs;
+                        plxFile.Channel(contCount,1).fragmentStarts = pl2ad.FragCounts;
+                        plxFile.Channel(contCount,1).Data = pl2ad.Values;
+                        clear pl2ad;
+                    end
 %                     [plxFile.Channel(contCount,1).Hz,...
 %                         plxFile.Channel(contCount,1).nSamples,...
 %                         plxFile.Channel(contCount,1).timestamps,...

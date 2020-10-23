@@ -101,9 +101,22 @@ switch lower(fileinfo.type)
              else
                  readType = [];
              end
-            [DataStruct, status] = DMD_NEXreader(FileName, readType, options);
-            %[DataStruct, status] = DMD_NEXreader(FileName,5); %Read only Continuous channels
-            if status
+             [DataStruct, status] = DMD_NEXreader(FileName, readType, options);
+             %[DataStruct, status] = DMD_NEXreader(FileName,5); %Read only Continuous channels
+             %Nex does not store creation date so try to extract from file system
+             %see: https://www.mathworks.com/matlabcentral/answers/288339-how-to-get-creation-date-of-files
+             warning('DMD_DataImportModule: Nex/Nex5 files do not store file start datetime. Using filesystem creation date');
+             try
+                 if ispc
+                     date = System.IO.File.GetCreationTime(FileName);
+                     DataStruct.StartDate = datenum(double([date.Year, date.Month, date.Day, date.Hour, date.Minute, date.Second]));
+                 else
+                     DataStruct.StartDate = datenum('01-01-01');
+                 end
+             catch
+                 DataStruct.StartDate = datenum('01-01-01');
+             end
+             if status
                 DataStruct.Filename = FileName;
             end
             

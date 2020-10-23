@@ -131,7 +131,6 @@ end
 nexFile.Version = fread(fid, 1, 'int32');
 nexFile.SubjectID = '';
 nexFile.Comment = deblank(char(fread(fid, 256, 'char')'));
-nexFile.StartDate = [];
 nexFile.FileFormat = '.nex';
 nexFile.Hz = fread(fid, 1, 'double');
 tbeg = fread(fid, 1, 'int32')./nexFile.Hz;

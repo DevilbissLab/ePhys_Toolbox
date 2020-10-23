@@ -16,7 +16,7 @@ ret = false; msg = '';
 HDR.labels = cell(0);HDR.digmin = []; HDR.digmax = []; HDR.physmin = []; HDR.physmax =[];
 data = [];
 defaultData = 'X';
-[filePath,fileName,fileExt] = fileparts(DataStruct.FileName);
+[filePath,fileName,fileExt] = fileparts(DataStruct.Filename);
 
 if nargin < 2
     options = struct();
@@ -82,12 +82,23 @@ end
 
 %% Build data array
 %if the sample rate and lengths are the same then concatinate
-if length(unique(HDR.samplerate)) == 1 && length(unique([DataStruct.Channel(:).nSamples])) == 1
+if isfield(DataStruct.Channel, 'nSamples')
+    nSamples = [DataStruct.Channel(:).nSamples];
+elseif isfield(DataStruct.Channel, 'NPointsWave')
+    nSamples = [DataStruct.Channel(:).NPointsWave];
+else
+    nSamples = [];
+    for curChan = 1:length(DataStruct.Channel)
+    nSamples = [nSamples, length(DataStruct.Channel(:).Data)];
+    end
+end
+if length(unique(HDR.samplerate)) == 1 && length(unique(nSamples)) == 1
     Data = [DataStruct.Channel(:).Data];
 else
-    Data = {plxFile.Channel(:).Data};
+    Data = {DataStruct.Channel(:).Data};
 end
 
+%clear DataStruct;                   %this is optional
 %Transform the Data into ADC values
 Data = round(Data / (2/65535));
 

@@ -1,4 +1,4 @@
-function [status, nexStruct] = NSB_NEXwriter(nexStruct, fileName)
+function [status, nexStruct] = DMD_NEXwriter(nexStruct, fileName)
 % write2NexFile is a replacment for writeNexFile
 % Written de novo with inspiration from C++ code on Neuroexplorer site.
 % Additionally contains abilty to write poulation vectors

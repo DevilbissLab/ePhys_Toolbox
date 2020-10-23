@@ -1,4 +1,4 @@
-function nexEventStruct = NSB_addAncNexInfo(nexEventStruct,node,nEvents,type)
+function nexEventStruct = DMD_addAncNexInfo(nexEventStruct,node,nEvents,type)
 % addAncInfo is a helper function to add structure fields that the
 % Neuroexplorer file requires to be written.  
 %
