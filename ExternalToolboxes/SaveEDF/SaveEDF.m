@@ -49,11 +49,10 @@ function [ret, msg] = SaveEDF(filename, data, header, type)
 %
 %
 %10/14/2020 DMD cleaned up and added error corrections
-% There are fundamental errors here. Rewrite. Right now this is a valid
-% EDF+ but the data is corrupt
 %
 
 ret = false; msg = '';
+try
 %Validate Inputs
 if nargin < 4
     edfPlus = true;   %edf+ i.e. with TALs/EDF Annotations Channel
@@ -65,7 +64,7 @@ end
 if ~isfield(header, 'duration') %set data record duration. This is not the best approach
     header.duration=1;
 end
-if ~iscell(data)                %put each channel into a cell
+if ~iscell(data)                %put each channel into a cell << memory issue
     data=num2cell(data, 1);
 end
 %Get number of data channels
@@ -131,6 +130,8 @@ AnnotationSR=length(AnnotationDATA)./header.records; % samplerate annotation cha
 
 data=[data double(AnnotationDATA)];
 header.samplerate=[header.samplerate, AnnotationSR];
+
+clear AnnotationDATA AnnotationSR Annt fs;
 end
 
 %% Generate EDF(+) header
@@ -384,7 +385,10 @@ header.physmax = sprintf('%-8i', int16(header.physmax))'; %physical maximum
 
 %Scale=32767/maxdata;
 %data(1:end-1)=cellfun(@(x) x.*Scale, data(1:end-1), 'UniformOutput', false);
-
+catch ME
+    msg = [ME.message,' in ',ME.stack(1).name,' Line: ',num2str(ME.stack(1).line)];
+    return;
+end  
 %% PART 3: forming of data
 %Structure of the data in format EDF:
 
@@ -397,16 +401,69 @@ header.physmax = sprintf('%-8i', int16(header.physmax))'; %physical maximum
 % detrend
 %data(1:end-1)=cellfun(@detrend, data(1:end-1), 'UniformOutput', false);
 
-for p1=1:length(data)
-    data{p1}=(buffer(data{p1}, ceil(samplerate(p1).*header.duration), 0));
+
+%%%%%%%%%%%%%%%%%
+% This section is REALLY memory intense and is the easy way if you have
+% GB/TB of memory.. However, matlab is bad at this
+try
+    %Step 1 for each channel buffer data into "RecordLength" blocks
+    % this is generally fine for smaller files
+    for p1=1:length(data)
+        data{p1}=(buffer(data{p1}, ceil(samplerate(p1).*header.duration), 0));
+    end
+catch ME
+    msg = [ME.message,' in ',ME.stack(1).name,' Line: ',num2str(ME.stack(1).line)];
+    warning('SaveEDF: Out of Memory converting data to int16');
+    %if this fails convert all data to single. This should work since all EDF values are single precision
+    for curChan = 1:length(data)
+        data{curChan} = int16(data{curChan});
+    end
+    for p1=1:length(data)
+        data{p1}=(buffer(data{p1}, ceil(samplerate(p1).*header.duration), 0));
+    end
+    DATAout=cell2mat(data');
+    DATAout=DATAout(:);
 end
 
-DATAout=cell2mat(data');
-DATAout=DATAout(:);
-    
-    
-%% SAVE DATA  
 try
+    %Step 2 Stack and read out data into a linear stream so that it is
+    %[CH1-rec1; Ch2-rec1;...Ch1-rec2; Ch2-rec2;...]
+    %The cell2Mat function will bail if it is a LARGE data set
+    DATAout=cell2mat(data');
+    DATAout=DATAout(:);
+    
+catch ME
+    msg = [ME.message,' in ',ME.stack(1).name,' Line: ',num2str(ME.stack(1).line)];
+    warning('SaveEDF: Out of Memory converting data to int16');
+    % DMD there are a few ways to handle this:
+    %if this fails convert all data to single. This should work since all EDF values are single precision
+    for curChan = 1:length(data)
+        data{curChan} = int16(data{curChan});
+    end
+    try
+        DATAout=cell2mat(data');
+        DATAout=DATAout(:);
+        
+    catch ME2
+        % if it all fails
+        %2) use a loop to assemble these data
+        msg = [ME2.message,' in ',ME2.stack(1).name,' Line: ',num2str(ME2.stack(1).line)];
+        warning('SaveEDF: Out of Memory using loop to assemble data (This is slow)');
+        DATAout = [];
+        nFrags = size(data{1},2);
+        txt = fprintf('Processing datarecord: 0 of %d', nFrags);
+        for curFrame = 1:nFrags
+            fprintf(repmat('\b',1,txt))
+            txt = fprintf('Processing datarecord: %d of %d\n', curFrame, nFrags);
+            for curChan = 1:length(data)
+                DATAout = [DATAout; data{curChan}(:,curFrame)];
+            end
+        end
+    end
+end
+
+try    
+%% SAVE DATA  
 fid = fopen(filename, 'wb', 'ieee-le');
 %%%%%% PART4: save header
  % 8 ascii : version of this data format (0)
@@ -463,5 +520,6 @@ fclose(fid);
 catch ME
     fclose(fid);
     msg = [ME.message,' in ',ME.stack(1).name,' Line: ',num2str(ME.stack(1).line)];
+    return;
 end
 ret = true;
